@@ -100,7 +100,7 @@ func main() {
 		fmt.Printf("post dupped pull request failed, %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("pull request dupplication suucess, %v\n", created)
+	fmt.Printf("pull request dupplication success, %s\n", created.GetHTMLURL())
 }
 
 func parseFromPR(prID string) (*prInfo, error) {
