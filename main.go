@@ -17,6 +17,8 @@ import (
 	git "gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 )
 
 const (
@@ -148,10 +150,20 @@ func githubClient(ctx context.Context) (*github.Client, error) {
 	return ghc, nil
 }
 
+func githubTokenAuth() transport.AuthMethod {
+	return &http.BasicAuth{
+		Username: os.Getenv(githubAccessTokenEnvName),
+		Password: "x-oauth-basic",
+	}
+}
+
 func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch string, shas []string) (string, error) {
 	baseBranch := pr.GetBase()
 	baseRepositoryURL := baseBranch.GetRepo().GetCloneURL()
-	cloneOptions := &git.CloneOptions{URL: baseRepositoryURL}
+	cloneOptions := &git.CloneOptions{
+		URL:  baseRepositoryURL,
+		Auth: githubTokenAuth(),
+	}
 	tempDir, err := ioutil.TempDir("", "duppr")
 	if err != nil {
 		log.Printf("clone target repository failed, %v", err)
@@ -180,7 +192,10 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 			return "", err
 		}
 
-		err = remote.Fetch(&git.FetchOptions{RemoteName: remoteName})
+		err = remote.Fetch(&git.FetchOptions{
+			RemoteName: remoteName,
+			Auth: githubTokenAuth(),
+		})
 		if err != nil {
 			log.Printf("fetch remote failed, %v", err)
 			return "", err
@@ -233,7 +248,11 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 		}
 	}
 
-	pushOptions := &git.PushOptions{RemoteName: requestBranch}
+	pushOptions := &git.PushOptions{
+		RemoteName: requestBranch,
+		Auth: githubTokenAuth(),
+	}
+
 	if sameRemote {
 		err = r.PushContext(ctx, pushOptions)
 	} else {
