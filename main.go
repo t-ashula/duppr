@@ -99,7 +99,7 @@ func parseFromPR(prID string) (*prInfo, error) {
 	parts := strings.SplitN(prID, "/", 4)
 	owner := parts[0]
 	repository := parts[1]
-	prNo, err := strconv.Atoi(parts[2])
+	prNo, err := strconv.Atoi(parts[3])
 
 	if owner == "" || repository == "" || prNo < 0 || err != nil {
 		if err != nil {
