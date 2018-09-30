@@ -51,12 +51,14 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+
 	prInfo, err := parseFromPR(fromPR)
 	if err != nil {
 		fmt.Printf("parse from pr failed, %v\n", err)
 		usage()
 		os.Exit(1)
 	}
+	log.Printf("start dupplication, %s to %s", fromPR, targetBranch)
 
 	ctx := context.Background()
 	ghc, err := githubClient(ctx)
@@ -65,12 +67,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.Printf("fetch pull request, %s", fromPR)
 	basePR, err := getGithubPullRequest(ctx, ghc, prInfo)
 	if err != nil {
 		fmt.Printf("fetch pull request %s failed, %v\n", fromPR, err)
 		os.Exit(1)
 	}
 
+	log.Printf("fetch pull request commtis, %s", fromPR)
 	commits, err := getGithubPullRequestCommits(ctx, ghc, prInfo)
 	if err != nil {
 		fmt.Printf("fetch base pull requests commits failed, %v\n", err)
@@ -82,12 +86,14 @@ func main() {
 		shas[i] = c.GetSHA()
 	}
 
+	log.Printf("prepare repository to create PR")
 	requestBranch, err := prepareRepository(ctx, basePR, targetBranch, shas)
 	if err != nil {
 		fmt.Printf("clone target repository failed, %v\n", err)
 		os.Exit(1)
 	}
 
+	log.Printf("create new PR")
 	newPR := makeDuppedPR(basePR, targetBranch, requestBranch)
 	created, err := postDuppedPR(ctx, ghc, prInfo, newPR)
 	if err != nil {
@@ -166,12 +172,13 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	}
 	tempDir, err := ioutil.TempDir("", "duppr")
 	if err != nil {
-		log.Printf("clone target repository failed, %v", err)
+		log.Printf("create tempdir failed, %v", err)
 		return "", err
 	}
 
 	defer os.RemoveAll(tempDir)
 
+	log.Printf("clone target repository %s into %s", baseRepositoryURL, tempDir)
 	r, err := git.PlainClone(tempDir, false, cloneOptions)
 	if err != nil {
 		log.Printf("clone target repository failed, %v", err)
@@ -186,26 +193,32 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	} else {
 		remoteName := "pr"
 		headRepositoryURL := headBranch.GetRepo().GetCloneURL()
+		log.Printf("git remote add %s %s 'pull request head repository'", remoteName, headRepositoryURL)
+
 		remote, err = r.CreateRemote(&config.RemoteConfig{Name: remoteName, URLs: []string{headRepositoryURL}})
 		if err != nil {
 			log.Printf("clone pr-head repository failed, %v", err)
 			return "", err
 		}
 
+		log.Printf("git fetch %s", remoteName)
 		err = remote.Fetch(&git.FetchOptions{
 			RemoteName: remoteName,
-			Auth: githubTokenAuth(),
+			Auth:       githubTokenAuth(),
 		})
 		if err != nil {
 			log.Printf("fetch remote failed, %v", err)
 			return "", err
 		}
 	}
+
 	w, err := r.Worktree()
 	if err != nil {
 		log.Printf("worktree failed,%v", err)
 		return "", err
 	}
+
+	log.Printf("git checkout %s", targetBranch)
 	err = w.Checkout(&git.CheckoutOptions{Branch: plumbing.ReferenceName(targetBranch)})
 	if err != nil {
 		log.Printf("checkout target branch faield, %v", err)
@@ -214,6 +227,7 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 
 	// create branch for new-pr
 	requestBranch := fmt.Sprintf("%s-for-%s", headBranch.GetRef(), targetBranch)
+	log.Printf("git checkout -b %s", requestBranch)
 	err = w.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.ReferenceName(requestBranch),
 		Create: true,
@@ -224,6 +238,7 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	}
 
 	// go-git not support cherry-pick yet
+	log.Printf("git cherry-pick ...")
 	{
 		cd, err := os.Getwd()
 		if err != nil {
@@ -240,6 +255,7 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 		for _, sha := range shas {
 			args := []string{"cherry-pick", sha}
 			cmd := exec.Command("git", args...)
+			log.Printf("git cherry-pick %s", sha)
 			err = cmd.Run()
 			if err != nil {
 				log.Printf("cherry pick %s failed, %v\n", sha, err)
@@ -250,9 +266,10 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 
 	pushOptions := &git.PushOptions{
 		RemoteName: requestBranch,
-		Auth: githubTokenAuth(),
+		Auth:       githubTokenAuth(),
 	}
 
+	log.Printf("git push %s", requestBranch)
 	if sameRemote {
 		err = r.PushContext(ctx, pushOptions)
 	} else {
