@@ -221,7 +221,7 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	log.Printf("git checkout %s", targetBranch)
 	err = w.Checkout(&git.CheckoutOptions{Branch: plumbing.ReferenceName(targetBranch)})
 	if err != nil {
-		log.Printf("checkout target branch faield, %v", err)
+		log.Printf("checkout target branch failed, %v", err)
 		return "", err
 	}
 
