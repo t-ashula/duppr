@@ -167,9 +167,8 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	baseBranch := pr.GetBase()
 	baseRepositoryURL := baseBranch.GetRepo().GetCloneURL()
 	cloneOptions := &git.CloneOptions{
-		URL:          baseRepositoryURL,
-		Auth:         githubTokenAuth(),
-		SingleBranch: false,
+		URL:  baseRepositoryURL,
+		Auth: githubTokenAuth(),
 	}
 	tempDir, err := ioutil.TempDir("", "duppr")
 	if err != nil {
@@ -192,22 +191,18 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 		return "", err
 	}
 
-	log.Printf("git checkout '%s'", targetBranch)
-	err = w.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)),
-	})
-	if err != nil {
-		log.Printf("checkout target branch failed, %v", err)
-		return "", err
-	}
-
 	// create branch for new-pr
 	headBranch := pr.GetHead()
 	requestBranch := fmt.Sprintf("%s-for-%s", headBranch.GetRef(), targetBranch)
-	log.Printf("git checkout -b %s", requestBranch)
+	log.Printf("git checkout -b %s origin/%s", requestBranch, targetBranch)
+	targetRef := plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch))
+	remoteRef, err := r.Reference(targetRef, true)
+	branchRef := plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", requestBranch))
+	newRef := plumbing.NewHashReference(branchRef, remoteRef.Hash())
+	r.Storer.SetReference(newRef)
 	err = w.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.ReferenceName(requestBranch),
-		Create: true,
+		Branch: newRef.Name(),
+		Create: false,
 	})
 	if err != nil {
 		log.Printf("create branch failed, %v", err)
@@ -215,11 +210,11 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	}
 
 	sameRemote := baseBranch.GetRepo().GetFullName() == headBranch.GetRepo().GetFullName()
+	const remoteName = "pr"
 	var remote *git.Remote
 	if sameRemote {
 		// do nothing
 	} else {
-		remoteName := "pr"
 		headRepositoryURL := headBranch.GetRepo().GetCloneURL()
 		log.Printf("git remote add %s %s 'pull request head repository'", remoteName, headRepositoryURL)
 
@@ -232,7 +227,6 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 		log.Printf("git fetch %s", remoteName)
 		err = remote.Fetch(&git.FetchOptions{
 			RemoteName: remoteName,
-			Progress:   os.Stderr,
 			Auth:       githubTokenAuth(),
 		})
 		if err != nil {
@@ -269,14 +263,14 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	}
 
 	pushOptions := &git.PushOptions{
-		RemoteName: requestBranch,
-		Auth:       githubTokenAuth(),
+		Auth:     githubTokenAuth(),
 	}
-
-	log.Printf("git push %s", requestBranch)
 	if sameRemote {
+		log.Printf("git push %s", requestBranch)
 		err = r.PushContext(ctx, pushOptions)
 	} else {
+		log.Printf("git push %s %s", remoteName, requestBranch)
+		pushOptions.RemoteName = remoteName
 		err = remote.PushContext(ctx, pushOptions)
 	}
 	if err != nil {
