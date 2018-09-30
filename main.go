@@ -51,6 +51,7 @@ func main() {
 	}
 	prInfo, err := parseFromPR(fromPR)
 	if err != nil {
+		fmt.Printf("parse from pr failed, %v\n", err)
 		usage()
 		os.Exit(1)
 	}
@@ -58,13 +59,13 @@ func main() {
 	ctx := context.Background()
 	ghc, err := githubClient(ctx)
 	if err != nil {
-		fmt.Printf("init github client failed, %v", err)
+		fmt.Printf("init github client failed, %v\n", err)
 		os.Exit(1)
 	}
 
 	basePR, err := getGithubPullRequest(ctx, ghc, prInfo)
 	if err != nil {
-		fmt.Printf("fetch pull request %s failed, %v", fromPR, err)
+		fmt.Printf("fetch pull request %s failed, %v\n", fromPR, err)
 		os.Exit(1)
 	}
 
@@ -81,7 +82,7 @@ func main() {
 
 	requestBranch, err := prepareRepository(ctx, basePR, targetBranch, shas)
 	if err != nil {
-		fmt.Printf("clone target repository failed, %v", err)
+		fmt.Printf("clone target repository failed, %v\n", err)
 		os.Exit(1)
 	}
 
@@ -91,7 +92,7 @@ func main() {
 		fmt.Printf("post dupped pull request failed, %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("pull request dupplication suucess, %v", created)
+	fmt.Printf("pull request dupplication suucess, %v\n", created)
 }
 
 func parseFromPR(prID string) (*prInfo, error) {
@@ -101,6 +102,9 @@ func parseFromPR(prID string) (*prInfo, error) {
 	prNo, err := strconv.Atoi(parts[2])
 
 	if owner == "" || repository == "" || prNo < 0 || err != nil {
+		if err != nil {
+			log.Printf("atoi failed, %v", err)
+		}
 		return nil, fmt.Errorf("pull request id (%s) is invalid", prID)
 	}
 
