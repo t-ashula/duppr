@@ -89,7 +89,7 @@ func main() {
 	log.Printf("prepare repository to create PR")
 	requestBranch, err := prepareRepository(ctx, basePR, targetBranch, shas)
 	if err != nil {
-		fmt.Printf("clone target repository failed, %v\n", err)
+		fmt.Printf("prepare repository failed, %v\n", err)
 		os.Exit(1)
 	}
 
@@ -167,8 +167,9 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 	baseBranch := pr.GetBase()
 	baseRepositoryURL := baseBranch.GetRepo().GetCloneURL()
 	cloneOptions := &git.CloneOptions{
-		URL:  baseRepositoryURL,
-		Auth: githubTokenAuth(),
+		URL:          baseRepositoryURL,
+		Auth:         githubTokenAuth(),
+		SingleBranch: false,
 	}
 	tempDir, err := ioutil.TempDir("", "duppr")
 	if err != nil {
@@ -185,7 +186,34 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 		return "", err
 	}
 
+	w, err := r.Worktree()
+	if err != nil {
+		log.Printf("worktree failed,%v", err)
+		return "", err
+	}
+
+	log.Printf("git checkout '%s'", targetBranch)
+	err = w.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)),
+	})
+	if err != nil {
+		log.Printf("checkout target branch failed, %v", err)
+		return "", err
+	}
+
+	// create branch for new-pr
 	headBranch := pr.GetHead()
+	requestBranch := fmt.Sprintf("%s-for-%s", headBranch.GetRef(), targetBranch)
+	log.Printf("git checkout -b %s", requestBranch)
+	err = w.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.ReferenceName(requestBranch),
+		Create: true,
+	})
+	if err != nil {
+		log.Printf("create branch failed, %v", err)
+		return "", err
+	}
+
 	sameRemote := baseBranch.GetRepo().GetFullName() == headBranch.GetRepo().GetFullName()
 	var remote *git.Remote
 	if sameRemote {
@@ -204,37 +232,13 @@ func prepareRepository(ctx context.Context, pr *github.PullRequest, targetBranch
 		log.Printf("git fetch %s", remoteName)
 		err = remote.Fetch(&git.FetchOptions{
 			RemoteName: remoteName,
+			Progress:   os.Stderr,
 			Auth:       githubTokenAuth(),
 		})
 		if err != nil {
 			log.Printf("fetch remote failed, %v", err)
 			return "", err
 		}
-	}
-
-	w, err := r.Worktree()
-	if err != nil {
-		log.Printf("worktree failed,%v", err)
-		return "", err
-	}
-
-	log.Printf("git checkout %s", targetBranch)
-	err = w.Checkout(&git.CheckoutOptions{Branch: plumbing.ReferenceName(targetBranch)})
-	if err != nil {
-		log.Printf("checkout target branch failed, %v", err)
-		return "", err
-	}
-
-	// create branch for new-pr
-	requestBranch := fmt.Sprintf("%s-for-%s", headBranch.GetRef(), targetBranch)
-	log.Printf("git checkout -b %s", requestBranch)
-	err = w.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.ReferenceName(requestBranch),
-		Create: true,
-	})
-	if err != nil {
-		log.Printf("create branch failed, %v", err)
-		return "", err
 	}
 
 	// go-git not support cherry-pick yet
