@@ -105,6 +105,9 @@ func main() {
 
 func parseFromPR(prID string) (*prInfo, error) {
 	parts := strings.SplitN(prID, "/", 4)
+	if len(parts) != 4 {
+		return nil, fmt.Errorf("pull request id (%s) is invalid", prID)
+	}
 	owner := parts[0]
 	repository := parts[1]
 	prNo, err := strconv.Atoi(parts[3])
